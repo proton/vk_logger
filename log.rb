@@ -1,6 +1,6 @@
-require "vkontakte_api"
-require "hashie"
-require "openssl"
+require 'vkontakte_api'
+require 'hashie'
+require 'openssl'
 
 OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 
@@ -12,16 +12,16 @@ Encoding.default_external = Encoding::UTF_8
 @main_dir = File.expand_path(File.dirname(__FILE__))
 
 def read_json(filepath)
-  content = File.open(filepath).read.force_encoding("utf-8")
+  content = File.open(filepath).read.force_encoding('utf-8')
   JSON.parse(content)
 end
 
-vk_app_config = read_json("config/vk_app.json")
+vk_app_config = read_json('config/vk_app.json')
 
 VkontakteApi.configure do |config|
-  config.app_id = vk_app_config["app_id"]
-  config.app_secret = vk_app_config["app_secret"]
-  config.redirect_uri = "http://oauth.vk.com/blank.html"
+  config.app_id = vk_app_config['app_id']
+  config.app_secret = vk_app_config['app_secret']
+  config.redirect_uri = 'http://oauth.vk.com/blank.html'
   config.api_version = 5.14
 end
 
@@ -56,12 +56,10 @@ def processor(token, kname)
 
   dlg_offset = 0
   loop do
-    puts __LINE__
-    p [{count: 200, offset: dlg_offset}, token]
+    p ["#{__FILE__}:#{__LINE__}", {count: 200, offset: dlg_offset}, token]
     r = retrier { api.messages.get_dialogs(count: 200, offset: dlg_offset) }
     unless r.items
-      p __LINE__
-      p r
+      p ["#{__FILE__}:#{__LINE__}", r]
     end
     break if (!r.items || r.items.empty?)
     r.items.each do |dlg_item|
@@ -69,8 +67,7 @@ def processor(token, kname)
       key = dlg.chat_id ? "chat#{dlg.chat_id}" : "user#{dlg.user_id}"
       path = "#{dir}#{key}.json"
       if File.exist?(path)
-        #puts path
-        h = JSON.parse File.open(path).read.force_encoding("utf-8")
+        h = JSON.parse File.open(path).read.force_encoding('utf-8')
         h = Hashie::Mash.new(h)
       else
         h = Hashie::Mash.new
@@ -82,7 +79,7 @@ def processor(token, kname)
       next if h.messages.last && h.messages.last.id >= dlg.id
       @changes << key
 
-      #Идея: идём вниз, пока не упрёмся в последний id
+      # Идея: идём вниз, пока не упрёмся в последний id
 
       start_id = dlg.id
       new_messages = []
@@ -111,7 +108,7 @@ def processor(token, kname)
           start_id = item.id
           content = item.body
           if item.attachments
-            if item.attachments.size == 1 && item.attachments[0]["type"] == "sticker"
+            if item.attachments.size == 1 && item.attachments[0]['type'] == 'sticker'
               att = item.attachments[0].sticker
               content += " stiker: #{att.photo_512 || att.photo_64}"
             else
@@ -126,12 +123,10 @@ def processor(token, kname)
       h.messages += new_messages.uniq.reverse
       h.messages.uniq!
 
-      File.open(path, "w+") { |f| f.write(h.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack("U") }) }
+      File.open(path, 'w+') { |f| f.write(h.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack('U') }) }
     end
     dlg_offset += 200
   end
-
-  #print
 
   users = {}
   users_path = "#{dir}users.db"
@@ -140,8 +135,8 @@ def processor(token, kname)
     h.each { |k, v| users[k.to_i] = v }
   end
 
-  for path in @changes.map { |f| "#{dir}/#{f}.json" } #Dir[dir+'*.json']
-    h = JSON.parse File.open(path).read.force_encoding("utf-8")
+  for path in @changes.map { |f| "#{dir}/#{f}.json" } # Dir[dir+'*.json']
+    h = JSON.parse File.open(path).read.force_encoding('utf-8')
     h = Hashie::Mash.new(h)
     txt = h.messages.map do |message|
       unless users[message.from]
@@ -150,25 +145,25 @@ def processor(token, kname)
         u = retrier { api.users.get(user_ids: message.from).first } || blank_user
         users[message.from] = u ? "#{u.first_name} #{u.last_name}" : message.from
       end
-      "(#{message.date.split(" +").first}) #{users[message.from]}: #{message.content}"
-    end.join("\n") + "\n"
+      "(#{message.date.split(' +').first}) #{users[message.from]}: #{message.content}"
+    end.join('\n') + '\n'
 
-    File.open("#{txt_dir}/#{File.basename(path, ".json")}.txt", "w+") { |f| f.write(txt) }
+    File.open("#{txt_dir}/#{File.basename(path, '.json')}.txt", 'w+') { |f| f.write(txt) }
   end
-  File.open(users_path, "w+") { |f| f.write(users.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack("U") }) }
+  File.open(users_path, 'w+') { |f| f.write(users.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack('U') }) }
 end
 
-tokens = read_json("config/tokens.json")
+tokens = read_json('config/tokens.json')
 
-#threads = []
+# threads = []
 loop do
-  puts "iter"
+  puts 'iter'
   tokens.each do |kname, token|
     p [kname, token]
-    #threads << Thread.new { processor(token,kname) }
+    # threads << Thread.new { processor(token,kname) }
     processor(token, kname)
   end
   puts "iter end #{Time.now}"
   sleep 300
 end
-#threads.each(&:join)
+# threads.each(&:join)
