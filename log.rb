@@ -7,10 +7,6 @@ OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 Encoding.default_internal = Encoding::UTF_8
 Encoding.default_external = Encoding::UTF_8
 
-#получаем токен https://vk.com/dev/standalone https://vk.com/dev/permissions (offline)
-
-@main_dir = File.expand_path(File.dirname(__FILE__))
-
 def read_json(filepath)
   content = File.open(filepath).read.force_encoding('utf-8')
   JSON.parse(content)
@@ -25,21 +21,19 @@ VkontakteApi.configure do |config|
   config.api_version = 5.14
 end
 
-# url = VkontakteApi.authorization_url(type: :client, scope: %i[groups photos video friends wall audio offline messages])
+# scopes = %i[groups photos video friends wall audio offline messages]
+# url = VkontakteApi.authorization_url(type: :client, scope: scopes)
 # puts url
 
 def retrier
   r = nil
   begin
     r = yield
-  rescue
-    if $!.is_a?(VkontakteApi::Error) && $!.error_code == 113
-      return nil
-    else
-      puts $!
-      sleep 1
-      retry
-    end
+  rescue err
+    return nil if err.is_a?(VkontakteApi::Error) && err.error_code == 113
+    puts err
+    sleep 1
+    retry
   end
   r
 end
@@ -47,7 +41,7 @@ end
 def processor(token, kname)
   api = VkontakteApi::Client.new(token)
 
-  dir = "#{@main_dir}/var/#{kname}/"
+  dir = "#{__dir__}/var/#{kname}/"
   txt_dir = "#{dir}/txt/"
   Dir.mkdir(dir) unless Dir.exist? dir
   Dir.mkdir(txt_dir) unless Dir.exist? txt_dir
@@ -56,12 +50,12 @@ def processor(token, kname)
 
   dlg_offset = 0
   loop do
-    p ["#{__FILE__}:#{__LINE__}", {count: 200, offset: dlg_offset}, token]
+    p ["#{__FILE__}:#{__LINE__}", { count: 200, offset: dlg_offset }, token]
     r = retrier { api.messages.get_dialogs(count: 200, offset: dlg_offset) }
     unless r.items
       p ["#{__FILE__}:#{__LINE__}", r]
     end
-    break if (!r.items || r.items.empty?)
+    break if !r.items || r.items.empty?
     r.items.each do |dlg_item|
       dlg = dlg_item.message
       key = dlg.chat_id ? "chat#{dlg.chat_id}" : "user#{dlg.user_id}"
@@ -85,7 +79,7 @@ def processor(token, kname)
       new_messages = []
       break_flag = false
       until break_flag
-        params = {offset: 0, count: 200, start_message_id: start_id}
+        params = { offset: 0, count: 200, start_message_id: start_id }
         if h.chat_id
           params[:chat_id] = h.chat_id
         else
@@ -99,11 +93,11 @@ def processor(token, kname)
           $params = params
           $r = r
           $new_messages = new_messages
-          if h.messages.size > 0 && item.id < h.messages.last.id
+          if !h.messages.empty? && item.id < h.messages.last.id
             break_flag = true
             break
           end
-          next if new_messages.size > 0 && ((new_messages.last[:id])..(new_messages.first[:id])).include?(item.id)
+          next if !new_messages.empty? && ((new_messages.last[:id])..(new_messages.first[:id])).cover?(item.id)
 
           start_id = item.id
           content = item.body
@@ -116,14 +110,17 @@ def processor(token, kname)
             end
           end
           content += " #{item.fwd_messages.inspect}" if item.fwd_messages
-          new_messages << {from: item.from_id, date: Time.at(item.date), id: item.id, out: item.out, content: content}
+          msg = { from: item.from_id, date: Time.at(item.date), id: item.id, out: item.out, content: content }
+          new_messages << msg
         end
         break if r.items.size < 100
       end
       h.messages += new_messages.uniq.reverse
       h.messages.uniq!
 
-      File.open(path, 'w+') { |f| f.write(h.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack('U') }) }
+      File.open(path, 'w+') do |f|
+        f.write(h.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack('U') })
+      end
     end
     dlg_offset += 200
   end
@@ -135,7 +132,7 @@ def processor(token, kname)
     h.each { |k, v| users[k.to_i] = v }
   end
 
-  for path in @changes.map { |f| "#{dir}/#{f}.json" } # Dir[dir+'*.json']
+  @changes.map { |f| "#{dir}/#{f}.json" }.each do |path| # Dir[dir+'*.json']
     h = JSON.parse File.open(path).read.force_encoding('utf-8')
     h = Hashie::Mash.new(h)
     txt = h.messages.map do |message|
@@ -148,9 +145,16 @@ def processor(token, kname)
       "(#{message.date.split(' +').first}) #{users[message.from]}: #{message.content}"
     end.join('\n') + '\n'
 
-    File.open("#{txt_dir}/#{File.basename(path, '.json')}.txt", 'w+') { |f| f.write(txt) }
+    File.open("#{txt_dir}/#{File.basename(path, '.json')}.txt", 'w+') do
+      |f| f.write(txt)
+    end
   end
-  File.open(users_path, 'w+') { |f| f.write(users.to_json.gsub(/\\u([0-9a-z]{4})/) { |s| [$1.to_i(16)].pack('U') }) }
+  File.open(users_path, 'w+') do |f|
+    r = users.to_json.gsub(/\\u([0-9a-z]{4})/) do |_s|
+      [$1.to_i(16)].pack('U')
+    end
+    f.write(r)
+  end
 end
 
 tokens = read_json('config/tokens.json')
