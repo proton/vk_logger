@@ -124,7 +124,7 @@ class Processor
     r = nil
     begin
       r = yield
-    rescue => err
+    rescue Error => err
       return nil if err.is_a?(VkontakteApi::Error) && err.error_code == 113
       puts err
       sleep 1
