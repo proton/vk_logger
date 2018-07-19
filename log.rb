@@ -2,17 +2,13 @@ require 'vkontakte_api'
 require 'hashie'
 require 'openssl'
 
+require './common.rb'
 require './processor.rb'
 
 OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 
 Encoding.default_internal = Encoding::UTF_8
 Encoding.default_external = Encoding::UTF_8
-
-def read_json(filepath)
-  content = File.open(filepath).read.force_encoding('utf-8')
-  JSON.parse(content)
-end
 
 vk_app_config = read_json('config/vk_app.json')
 
